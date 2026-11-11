@@ -1,6 +1,44 @@
-// crm_service.cjs — query pending missed calls from realestate_db using workflow logic
-const mongoose = require('C:/Users/an941/Desktop/KPro Stuffs/D-Pro/realestate/server/node_modules/mongoose');
-const { getInboundMissedCallsAnalytics } = require('C:/Users/an941/Desktop/KPro Stuffs/D-Pro/realestate/server/features/workflows/missedCalls.workflow.js');
+const fs = require('fs');
+const path = require('path');
+
+function getRealEstateServerDir() {
+  const candidates = [
+    process.env.REALESTATE_SERVER_DIR,
+    path.resolve(__dirname, '../../crm(corely)/realestate/server'),
+    path.resolve(__dirname, '../crm(corely)/realestate/server'),
+    path.resolve(__dirname, '../../realestate/server'),
+    path.resolve(__dirname, '../realestate/server'),
+    '/root/Aibot/crm(corely)/realestate/server',
+    '/root/Aibot/realestate/server',
+    '/root/Aibot/outbound-ai/crm(corely)/realestate/server',
+    '/Users/prakash/Documents/kpro/crm(corely)/realestate/server',
+    'C:/Users/an941/Desktop/KPro Stuffs/D-Pro/realestate/server',
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return candidates[0] || '';
+}
+
+const serverDir = getRealEstateServerDir();
+const mongoosePath = path.join(serverDir, 'node_modules', 'mongoose');
+const workflowPath = path.join(serverDir, 'features', 'workflows', 'missedCalls.workflow.js');
+
+let mongoose;
+try {
+  mongoose = require(fs.existsSync(mongoosePath) ? mongoosePath : 'mongoose');
+} catch (e) {
+  mongoose = require('mongoose');
+}
+
+let getInboundMissedCallsAnalytics;
+try {
+  getInboundMissedCallsAnalytics = require(workflowPath).getInboundMissedCallsAnalytics;
+} catch (err) {
+  console.error(`[CRM Service] Cannot find missedCalls.workflow.js at "${workflowPath}". Set REALESTATE_SERVER_DIR in .env to the realestate server path.`);
+  process.exit(1);
+}
 
 const MONGO_URI = process.env.REAL_MONGO_URI || 'mongodb://mongo_admin:Realestate123%24@76.13.242.179:27017/realestate_db?authSource=admin';
 
@@ -86,8 +124,9 @@ if (require.main === module) {
   const start = args[0] ? args[0].trim() : '';
   const end = args[1] ? args[1].trim() : '';
   fetchPendingCalls(start, end).then(data => {
-    console.log(JSON.stringify(data));
-    process.exit(0);
+    process.stdout.write(JSON.stringify(data) + '\n', () => {
+      process.exit(0);
+    });
   }).catch(err => {
     console.error(err);
     process.exit(1);

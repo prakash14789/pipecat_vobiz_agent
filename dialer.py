@@ -90,12 +90,14 @@ class OutboundDialer:
         uuid = self.active_call.get("call_uuid", "")
         if (status == "dialing" and elapsed > 60.0) or (status == "in_call" and elapsed > 1800.0):
             logger.warning(f"Watchdog terminating stuck call {uuid} ({status}) after {elapsed:.1f}s")
-            db.finalize_call(
-                call_uuid=uuid,
-                status="hung_up",
-                disposition="no_answer" if status == "dialing" else "dropped",
-                reason="Watchdog timeout - carrier response or hangup webhook expired",
-            )
+            try:
+                db.finalize_call(
+                    call_uuid=uuid,
+                    status="hung_up",
+                    fallback_disposition="no_answer" if status == "dialing" else "dropped",
+                )
+            except Exception as e:
+                logger.error(f"Error in watchdog finalize_call: {e}")
             self.on_call_ended(uuid)
 
     # Calculate live counters for dialer UI

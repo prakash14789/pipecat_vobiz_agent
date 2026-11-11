@@ -44,10 +44,11 @@ console.log('  Frontend Vite:   http://localhost:3000');
 console.log('='.repeat(60));
 
 // Spawn cloudflared tunnel if binary exists
-const cloudflaredExe = path.join(__dirname, 'cloudflared.exe');
+const localBin = path.join(__dirname, process.platform === 'win32' ? 'cloudflared.exe' : 'cloudflared');
+const cloudflaredExe = fs.existsSync(localBin) ? localBin : (fs.existsSync(path.join(__dirname, 'cloudflared.exe')) ? path.join(__dirname, 'cloudflared.exe') : null);
 let tunnelProcess = null;
 
-if (fs.existsSync(cloudflaredExe)) {
+if (cloudflaredExe && fs.existsSync(cloudflaredExe)) {
   tunnelProcess = spawn(cloudflaredExe, ['tunnel', '--url', 'http://127.0.0.1:8000'], {
     cwd: __dirname,
     shell: false,

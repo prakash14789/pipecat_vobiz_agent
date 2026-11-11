@@ -23,7 +23,11 @@ from pipecat.processors.aggregators.llm_response_universal import (
     UserTurnMessageAddedMessage,
 )
 from pipecat.audio.filters.rnnoise_filter import RNNoiseFilter
-from pipecat.services.google.gemini_live.llm import GeminiLiveLLMService, GeminiVADParams
+from pipecat.services.google.gemini_live.llm import (
+    GeminiLiveLLMService,
+    GeminiVADParams,
+    StartSensitivity,
+)
 from pipecat.services.llm_service import FunctionCallParams, FunctionCallResultProperties
 from pipecat.transports.websocket.fastapi import (
     FastAPIWebsocketParams,
@@ -99,9 +103,15 @@ async def run_vobiz_agent(
     auth_id = vobiz_auth_id or os.getenv("VOBIZ_AUTH_ID", "")
     auth_token = vobiz_auth_token or os.getenv("VOBIZ_AUTH_TOKEN", "")
 
+    output_sample_rate = int(os.getenv("OUTPUT_SAMPLE_RATE", "24000"))
+    play_chunk_ms = int(os.getenv("PLAY_CHUNK_MS", "40"))
+    audio_out_10ms_chunks = max(1, play_chunk_ms // 10)
+
     serializer_params = VobizFrameSerializer.InputParams(
         encoding="audio/x-l16",
         vobiz_sample_rate=16000,
+        output_sample_rate=output_sample_rate,
+        output_encoding="audio/x-l16",
         l16_byte_order="le",
         auto_hang_up=True,
         hangup_method="both",
@@ -122,8 +132,8 @@ async def run_vobiz_agent(
             audio_out_enabled=True,
             add_wav_header=False,
             audio_in_sample_rate=16000,
-            audio_out_sample_rate=16000,
-            audio_out_10ms_chunks=2,
+            audio_out_sample_rate=output_sample_rate,
+            audio_out_10ms_chunks=audio_out_10ms_chunks,
             audio_in_filter=RNNoiseFilter(),
             serializer=serializer,
         ),
@@ -221,8 +231,9 @@ async def run_vobiz_agent(
             voice=GEMINI_VOICE,
             model=GEMINI_MODEL,
             vad=GeminiVADParams(
-                prefix_padding_ms=int(os.getenv("VAD_PREFIX_PADDING_MS", "150")),
-                silence_duration_ms=int(os.getenv("VAD_SILENCE_MS", "300")),
+                start_sensitivity=StartSensitivity.START_SENSITIVITY_LOW,
+                prefix_padding_ms=int(os.getenv("VAD_PREFIX_PADDING_MS", "200")),
+                silence_duration_ms=int(os.getenv("VAD_SILENCE_MS", "600")),
             ),
         ),
         tools=tools,
@@ -263,17 +274,23 @@ async def run_vobiz_agent(
         pipeline,
         params=PipelineParams(
             audio_in_sample_rate=16000,
-            audio_out_sample_rate=16000,
+            audio_out_sample_rate=output_sample_rate,
             enable_metrics=True,
             enable_usage_metrics=True,
         ),
     )
     task_ref[0] = task
 
+    unpause_task: List[Optional[asyncio.Task]] = [None]
+
     @transport.event_handler("on_client_connected")
     async def on_client_connected(transport_instance, client):
         logger.info(f"Vobiz WebSocket connected for call {call_uuid}")
         tracer.record_event("gemini_session_ready", {"model": GEMINI_MODEL, "voice": GEMINI_VOICE})
+
+        # Mute inbound microphone during opening greeting so pickup static and initial caller "Hello" do not cut Ananya off
+        llm.set_audio_input_paused(True)
+
         # Prompt model to begin conversation with configured opening greeting
         context.add_message({
             "role": "developer",
@@ -283,9 +300,18 @@ async def run_vobiz_agent(
         })
         await task.queue_frames([LLMRunFrame()])
 
+        async def unpause_mic_after_greeting():
+            await asyncio.sleep(4.2)
+            llm.set_audio_input_paused(False)
+            logger.info(f"[{call_uuid[:8]}] Opening greeting completed. Microphone unpaused for caller response.")
+
+        unpause_task[0] = asyncio.create_task(unpause_mic_after_greeting())
+
     @transport.event_handler("on_client_disconnected")
     async def on_client_disconnected(transport_instance, client):
         logger.info(f"Vobiz WebSocket disconnected for call {call_uuid}")
+        if unpause_task[0] and not unpause_task[0].done():
+            unpause_task[0].cancel()
         if hangup_timer[0] and not hangup_timer[0].done():
             hangup_timer[0].cancel()
         await task.cancel()

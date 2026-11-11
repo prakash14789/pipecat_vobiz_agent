@@ -45,7 +45,8 @@ console.log('='.repeat(60));
 
 // Start services sequentially: tunnel first, then backend and frontend
 async function main() {
-  const cloudflaredExe = path.join(__dirname, 'cloudflared.exe');
+  const localBin = path.join(__dirname, process.platform === 'win32' ? 'cloudflared.exe' : 'cloudflared');
+  const cloudflaredExe = fs.existsSync(localBin) ? localBin : (fs.existsSync(path.join(__dirname, 'cloudflared.exe')) ? path.join(__dirname, 'cloudflared.exe') : null);
   let tunnelProcess = null;
   let backend = null;
   let frontend = null;
@@ -72,7 +73,7 @@ async function main() {
   process.on('SIGTERM', shutdown);
 
   // 1. Initialize tunnel if available
-  if (fs.existsSync(cloudflaredExe)) {
+  if (cloudflaredExe && fs.existsSync(cloudflaredExe)) {
     console.log('  Establishing Cloudflare tunnel...');
     tunnelProcess = spawn(cloudflaredExe, ['tunnel', '--url', 'http://127.0.0.1:8000'], {
       cwd: __dirname,

@@ -204,7 +204,11 @@ def finalize_call(
     status: str = "completed",
     batch_id: Optional[str] = None,
     fallback_disposition: Optional[str] = None,
+    disposition: Optional[str] = None,
+    reason: Optional[str] = None,
+    **kwargs: Any,
 ) -> None:
+    fallback_disp = disposition or fallback_disposition
     col = get_collection()
     tracer = diagnostics.get_tracer(call_uuid)
     summary = tracer.finalize()
@@ -220,7 +224,7 @@ def finalize_call(
             if doc and doc.get("start_time"):
                 duration = round(time.time() - doc["start_time"], 2)
 
-            resolved = resolve_end_of_call_disposition(doc, tracer, summary, fallback_disposition)
+            resolved = resolve_end_of_call_disposition(doc, tracer, summary, fallback_disp)
 
             update_fields: Dict[str, Any] = {
                 "status": status,
@@ -236,8 +240,9 @@ def finalize_call(
                 update_fields["customer_name"] = resolved["customer_name"]
             if resolved.get("callback_time"):
                 update_fields["callback_time"] = resolved["callback_time"]
-            if resolved.get("reason"):
-                update_fields["reason"] = resolved["reason"]
+            final_reason = reason or resolved.get("reason")
+            if final_reason:
+                update_fields["reason"] = final_reason
             if b_id:
                 update_fields["batch_id"] = b_id
 

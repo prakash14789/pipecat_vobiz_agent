@@ -1,5 +1,6 @@
 import sys
-sys.path.insert(0, "C:/Users/an941/Desktop/New folder/pipecat_vobiz_agent")
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 import db
 
 col = db.get_collection()

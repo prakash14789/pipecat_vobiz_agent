@@ -4,7 +4,7 @@ from pathlib import Path
 
 sys.stdout.reconfigure(encoding="utf-8")
 
-log_path = Path(r"C:\Users\an941\Desktop\New folder\pipecat_vobiz_agent\logs\call_diagnostics.jsonl")
+log_path = Path(__file__).resolve().parent / "logs" / "call_diagnostics.jsonl"
 lines = log_path.read_text(encoding="utf-8").strip().splitlines()
 
 calls_by_id = {}
